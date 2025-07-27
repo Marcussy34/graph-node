@@ -1,765 +1,128 @@
-# 🔒 SilentGuard – Product Requirements Document (v4)
+# Graph Node
 
-_Last updated: 25 Jul 2025 – v4: Wallet Vault + **Sui Event Mirroring via Sapphire (ROFL)**_
+[![Build Status](https://github.com/graphprotocol/graph-node/actions/workflows/ci.yml/badge.svg)](https://github.com/graphprotocol/graph-node/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Getting Started Docs](https://img.shields.io/badge/docs-getting--started-brightgreen.svg)](docs/getting-started.md)
 
----
+## Overview
 
-## 1 · Executive Summary
+[The Graph](https://thegraph.com/) is a decentralized protocol that organizes and distributes blockchain data across the leading Web3 networks. A key component of The Graph's tech stack is Graph Node.
 
-**SilentGuard** is a privacy-first security suite delivered as a browser extension (with PWA fallback). It bundles two core pillars under one UX:
+Before using `graph-node,` it is highly recommended that you read the [official Graph documentation](https://thegraph.com/docs/en/subgraphs/quick-start/) to understand Subgraphs, which are the central mechanism for extracting and organizing blockchain data.
 
-1. **Password Vault** – Cloud-synced, zero-knowledge credential manager  
-2. **Wallet Vault** – Always-encrypted storage & enclave-based signing for Web3 keys
+This guide is for:
 
-A mandatory third pillar is a **live, cross-chain data layer powered by The Graph**. This layer indexes all relevant security events via a **GraphQL endpoint**, used by the client for UI state, notifications, and analytics.
+1. Subgraph developers who want to run `graph-node` locally to test their Subgraphs during development
+2. Contributors who want to add features or fix bugs to `graph-node` itself
 
-> **Note:** Since The Graph cannot index Sui natively, we use an **Oasis ROFL off-chain worker** to mirror Sui events to Sapphire, where synthetic events are emitted and indexed.
+## Running `graph-node` from Docker images
 
----
+For subgraph developers, it is highly recommended to use prebuilt Docker
+images to set up a local `graph-node` environment. Please read [these
+instructions](./docker/README.md) to learn how to do that.
 
-### Core Infrastructure
+## Running `graph-node` from source
 
-- **Sui** – Public state (Move objects, device registry, CID pointers)
-- **Oasis Sapphire** – Confidential compute & remote-attested key custody
-- **Oasis ROFL** – Trusted off-chain worker that mirrors Sui events into Sapphire
-- **Walrus + Seal** – Decentralized blob storage & ACL
-- **Sui zkLogin** – Seed-phrase-free onboarding (Google/Apple identity)
-- **The Graph** – Self-hosted node with custom Sapphire emulator for real-time indexing
+This is usually only needed for developers who want to contribute to `graph-node`.
 
----
+### Prerequisites
 
-## 2 · Expanded Problem Statement
+To build and run this project, you need to have the following installed on your system:
 
-| Pain                            | Legacy Tools                       | SilentGuard Fix                                      |
-|--------------------------------|------------------------------------|------------------------------------------------------|
-| Password reuse & vault breaches | SaaS vaults expose metadata        | TEE-protected Password Vault                          |
-| Wallet seed loss / phishing     | Paper backups, hot-wallet leaks    | Wallet Vault with enclave signing                     |
-| Split UX for security signals   | Poll RPCs or run nodes             | Single GraphQL stream via The Graph                   |
+- Rust (latest stable): Follow [How to install
+  Rust](https://www.rust-lang.org/en-US/install.html). Run `rustup install
+stable` in _this directory_ to make sure all required components are
+  installed. The `graph-node` code assumes that the latest available
+  `stable` compiler is used.
+- PostgreSQL: [PostgreSQL Downloads](https://www.postgresql.org/download/) lists
+  downloads for almost all operating systems.
+  - For OSX: We highly recommend [Postgres.app](https://postgresapp.com/).
+  - For Linux: Use the Postgres version that comes with the distribution.
+- IPFS: [Installing IPFS](https://docs.ipfs.io/install/)
+- Protobuf Compiler: [Installing Protobuf](https://grpc.io/docs/protoc-installation/)
 
----
+For Ethereum network data, you can either run your own Ethereum node or use an Ethereum node provider of your choice.
 
-## 3 · Goals & Success Metrics
+### Create a database
 
-| Goal             | KPI                                | Target (M+6) |
-|------------------|------------------------------------|--------------|
-| 🚀 User adoption | Monthly Active Vaults               | 35 k         |
-| 🔐 Wallet safety | Confirmed key-theft incidents       | 0            |
-| ⚡ Signing speed | p95 tx signature turnaround         | < 2 s        |
-| 🔔 Alerts        | Subgraph event → UI toast < 3 s (p95)| ≥ 95 %       |
-| 📊 Reliability   | Subgraph uptime over 30 days        | ≥ 99.5 %     |
+Once Postgres is running, you need to issue the following commands to create a database
+and configure it for use with `graph-node`.
 
----
-
-## 4 · Personas
-
-- **Eve** – Everyday web user (passwords)  
-- **Sam** – Security enthusiast (wallet vault, hardware recovery)  
-- **NFT Nico** – Frequent signer/trader; wants safer hot wallet  
-- **Analyst Ana** – Uses public subgraph to chart adoption/breaches  
-
----
-
-## 5 · Value Proposition
-
-- 🔐 **All secrets covered** – Passwords & Web3 keys secured in TEEs  
-- 🔁 **One recovery path** – Google/Apple + social shares restore everything  
-- 🔎 **Live trust signals** – Real-time breach alerts & signing history via The Graph  
-- 📂 **Open data** – Devs, wallets, & researchers build on the subgraph  
-
----
-
-## 6 · Project Scope (MVP)
-
-| Component            | Must-have | Status | Notes                                                        |
-|----------------------|-----------|--------|--------------------------------------------------------------|
-| Password Vault       | ✅        | 🚧     | Existing spec                                                |
-| Wallet Vault         | ✅        | 🚧     | EVM & Sui key storage and signing                            |
-| The Graph Subgraph   | ✅        | ✅     | **DEPLOYED** - Docker setup with Sapphire emulator working  |
-| **Sapphire RPC Emulator** | ✅    | ✅     | **DEPLOYED** - Running on localhost:8545 with eth_getBlockReceipts |
-| **ROFL Sui Mirror**  | ✅        | 🚧     | Translates Sui events → Sapphire synthetic events via ROFL   |
-| Device Registry      | ✅        | 🚧     | Shared infra for vault & wallet                              |
-| Recovery Kit         | ✅        | 🚧     | Sui zkLogin + secret share recovery                          |
-| Phishing Heuristics  | ✅        | 🚧     | Built into signing proxy                                     |
-
-**Current Infrastructure Status:**
-- ✅ **Graph Node**: Running on localhost:8000-8040
-- ✅ **Sapphire Emulator**: Connected to Oasis Sapphire testnet via Chainstack RPC
-- ✅ **IPFS**: Running on localhost:5001
-- ✅ **PostgreSQL**: Ready for subgraph data storage
-- ✅ **Sample Subgraph**: Successfully deployed and indexing
-
----
-
-## 7 · User Stories (Graph + Mirror-Aware)
-
-| ID   | Story                                                                                     | Acceptance Tests                                                                 |
-|------|--------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
-| G-01 | As a user, I see a toast within 3 s when **ROFL** flags a breached password               | Subgraph emits `BreachAlert`; toast fires in UI                                  |
-| G-02 | As a developer, I query a public endpoint to list daily new vaults                        | `dailyNewVaults` includes mirrored Sui events accurately via ROFL                |
-| G-03 | As a security auditor, I fetch last 100 signing events for a wallet                       | `txSigneds` returns correct, ordered logs from Sapphire                          |
-
----
-
-## 8 · Functional Requirements (Graph-specific)
-
-- **Data Sources**:  
-  - Sapphire contracts (`Vault`, `Signer`) via self-hosted Graph Node + RPC emulator  
-  - Sui events mirrored via **ROFL off-chain worker** to Sapphire  
-
-- **Entities**:  
-  `Passkey`, `CredentialBlob`, `WalletMeta`, `Device`, `BreachAlert`, `TxSigned`
-
-- **Subscriptions**:  
-  WebSocket support for `BreachAlert`, `DeviceRevoked`
-
-- **Rate Limits & Caching**:  
-  100 req/s max, 30 s GraphQL cache
-
-- **Health Checks**:  
-  Extension pings `/health`; < 200 ms response
-
----
-
-## 9 · Non-Functional Requirements
-
-- **Performance**:  
-  - 95 % GraphQL queries < 300 ms  
-  - Subscriptions < 2 s lag  
-
-- **Reliability**:  
-  - Multi-replica Graph node  
-  - ROFL worker retries and event replays  
-  - RPC emulator failover and monitoring
-
-- **Security**:  
-  - HTTPS + API key required  
-  - Read-only GraphQL endpoint  
-
----
-
-## 10 · Technical Architecture
-
-```
-                     +------------------------------+
-                     |        User Browser          |
-                     |------------------------------|
-                     | React UI + Service Worker    |
-                     | - GraphQL: localhost:8000    |
-                     | - Sui JS SDK (write txs)     |
-                     | - Ethers.js (EVM txs)        |
-                     +--------------+---------------+
-                                    |
-                                    v
-                         +----------+----------+
-                         |  Self-Hosted Graph  |
-                         |     Node Suite      |
-                         |---------------------|
-                         | :8000 - GraphQL     |
-                         | :8001 - WebSocket   |
-                         | :8020 - JSON-RPC    |
-                         | :8030 - Index Node  |
-                         | :8040 - Metrics     |
-                         +----------+----------+
-                                    ^
-                                    |
-                     +--------------+---------------+
-                     |  Sapphire RPC Emulator       |
-                     |  localhost:8545               |
-                     |  (eth_getBlockReceipts)       |
-                     +--------------+---------------+
-                                    ^
-                                    |
-              +---------------------+----------------------+
-              |  Oasis Sapphire Testnet                   |
-              |  (chainstack.com/459accf...)              |
-              |  Signer + Vault Contracts                 |
-              +------------------+-------------------------+
-                                 |
-                                 v
-                  +--------------+--------------+
-                  |     Walrus Blob Storage     |
-                  |   + Access Control Layer    |
-                  +-----------------------------+
-
-                         [ ROFL Off-Chain Worker ]
-                          +----------------+
-                          | Listens to Sui |
-                          | RPC Events     |
-                          | Calls Sapphire |
-                          | emitSyntheticEvent() |
-                          +--------+-------+
-                                   |
-                                   v
-                        [ Mirrors to Sapphire ]
-```
-
----
-
-## 11 · Detailed Graph Node + Sapphire Setup Guide
-
-Our **Graph Node infrastructure is deployed and tested** with a working setup that can index any EVM-compatible chain, including Oasis Sapphire.
-
-### 📁 Project Structure
-
-```
-graph-node/
-├── docker/
-│   ├── docker-compose.yml          # Full Graph Node stack
-│   ├── emulator/
-│   │   ├── Dockerfile              # Sapphire RPC emulator
-│   │   ├── index.js                # eth_getBlockReceipts implementation
-│   │   └── package.json            # Dependencies
-│   └── data/                       # Persistent data volumes
-└── my-oasis-subgraph/              # Example subgraph project
-    ├── subgraph.yaml               # Subgraph manifest
-    ├── schema.graphql              # GraphQL schema
-    ├── src/mapping.ts              # Event handlers
-    ├── abis/                       # Contract ABIs
-    └── package.json                # Graph CLI dependencies
-```
-
-### 🛠️ Infrastructure Setup
-
-#### Step 1: Start the Graph Node Stack
+The name of the `SUPERUSER` depends on your installation, but is usually `postgres` or your username.
 
 ```bash
-# Clone the repository and navigate to docker directory
-cd graph-node/docker
-
-# Start all services (Graph Node, IPFS, PostgreSQL, Emulator)
-docker-compose up -d
-
-# Verify all services are running
-docker-compose ps
+psql -U <SUPERUSER> <<EOF
+create user graph with password '<password>';
+create database "graph-node" with owner=graph template=template0 encoding='UTF8' locale='C';
+create extension pg_trgm;
+create extension btree_gist;
+create extension postgres_fdw;
+grant usage on foreign data wrapper postgres_fdw to graph;
+EOF
 ```
 
-**Expected Services:**
-| Service | Port | Status | Purpose |
-|---------|------|--------|---------|
-| Graph Node GraphQL | 8000 | ✅ Running | Query endpoint for subgraphs |
-| Graph Node WebSocket | 8001 | ✅ Running | Real-time subscriptions |
-| Graph Node JSON-RPC | 8020 | ✅ Running | Subgraph deployment |
-| Index Node | 8030 | ✅ Running | Subgraph management |
-| Metrics | 8040 | ✅ Running | Prometheus metrics |
-| IPFS | 5001 | ✅ Running | Subgraph manifest storage |
-| PostgreSQL | 5432 | ✅ Running | Indexed data storage |
-| **Sapphire Emulator** | 8545 | ✅ Running | RPC proxy with `eth_getBlockReceipts` |
-
-#### Step 2: Verify Emulator Connectivity
+For convenience, set the connection string to the database in an environment
+variable, and save it, e.g., in `~/.bashrc`:
 
 ```bash
-# Test basic RPC connectivity
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-
-# Test eth_getBlockReceipts (custom method)
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_getBlockReceipts","params":["latest"],"id":1}'
+export POSTGRES_URL=postgresql://graph:<password>@localhost:5432/graph-node
 ```
 
-### 📊 Subgraph Development & Deployment
+Use the `POSTGRES_URL` from above to have `graph-node` connect to the
+database. If you ever need to manually inspect the contents of your
+database, you can do that by running `psql $POSTGRES_URL`. Running this
+command is also a convenient way to check that the database is up and
+running and that the connection string is correct.
 
-#### Step 1: Install Graph CLI
+### Build and Run `graph-node`
+
+Clone this repository and run this command at the root of the repository:
 
 ```bash
-# Install globally
-npm install -g @graphprotocol/graph-cli
-
-# Verify installation
-graph --version
+export GRAPH_LOG=debug
+cargo run -p graph-node --release -- \
+  --postgres-url $POSTGRES_URL \
+  --ethereum-rpc NETWORK_NAME:[CAPABILITIES]:URL \
+  --ipfs 127.0.0.1:5001
 ```
 
-#### Step 2: Create a New Subgraph Project
+The argument for `--ethereum-rpc` contains a network name (e.g. `mainnet`) and
+a list of provider capabilities (e.g. `archive,traces`). The URL is the address
+of the Ethereum node you want to connect to, usually a `https` URL, so that the
+entire argument might be `mainnet:archive,traces:https://provider.io/some/path`.
 
-```bash
-# Create project directory
-mkdir my-silentguard-subgraph
-cd my-silentguard-subgraph
+When `graph-node` starts, it prints the various ports that it is listening on.
+The most important of these is the GraphQL HTTP server, which by default
+is at `http://localhost:8000`. You can use routes like `/subgraphs/name/<subgraph-name>`
+and `/subgraphs/id/<IPFS hash>` to query subgraphs once you have deployed them.
 
-# Initialize package.json
-npm init -y
+### Deploying a Subgraph
 
-# Install dependencies
-npm install @graphprotocol/graph-cli@0.69.0 @graphprotocol/graph-ts@0.31.0
-```
+Follow the [Subgraph deployment
+guide](https://thegraph.com/docs/en/subgraphs/developing/introduction/).
+After setting up `graph-cli` as described, you can deploy a Subgraph to your
+local Graph Node instance.
 
-#### Step 3: Configure Subgraph Manifest
+### Advanced Configuration
 
-Create `subgraph.yaml`:
+The command line arguments generally are all that is needed to run a
+`graph-node` instance. For advanced uses, various aspects of `graph-node`
+can further be configured through [environment
+variables](https://github.com/graphprotocol/graph-node/blob/master/docs/environment-variables.md).
 
-```yaml
-specVersion: 0.0.4
-schema:
-  file: ./schema.graphql
-dataSources:
-  - kind: ethereum/contract
-    name: SilentGuardVault
-    network: oasis  # This MUST match docker-compose.yml: ethereum: 'oasis:http://emulator:8545'
-    source:
-      address: "0xYourSapphireContractAddress"
-      abi: SilentGuardVault
-      startBlock: 12700000  # Use recent block number
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      file: ./src/mapping.ts
-      entities:
-        - VaultCreated
-        - DeviceRegistered
-        - BreachAlert
-        - User
-      abis:
-        - name: SilentGuardVault
-          file: ./abis/SilentGuardVault.json
-      eventHandlers:
-        - event: VaultCreated(indexed address,bytes32,uint256)
-          handler: handleVaultCreated
-        - event: DeviceRegistered(indexed address,bytes32,string)
-          handler: handleDeviceRegistered
-        - event: BreachAlert(indexed address,uint256,string)
-          handler: handleBreachAlert
-```
+Very large `graph-node` instances can also be configured using a
+[configuration file](./docs/config.md) That is usually only necessary when
+the `graph-node` needs to connect to multiple chains or if the work of
+indexing and querying needs to be split across [multiple databases](./docs/config.md).
 
-#### Step 4: Define GraphQL Schema
+## Contributing
 
-Create `schema.graphql`:
+Please check [CONTRIBUTING.md](CONTRIBUTING.md) for development flow and conventions we use.
+Here's [a list of good first issues](https://github.com/graphprotocol/graph-node/labels/good%20first%20issue).
 
-```graphql
-type VaultCreated @entity(immutable: true) {
-  id: ID!
-  user: User!
-  vaultId: Bytes!
-  timestamp: BigInt!
-  blockNumber: BigInt!
-  transactionHash: Bytes!
-}
+## License
 
-type DeviceRegistered @entity(immutable: true) {
-  id: ID!
-  user: User!
-  deviceId: Bytes!
-  deviceName: String!
-  timestamp: BigInt!
-  blockNumber: BigInt!
-  transactionHash: Bytes!
-}
+Copyright &copy; 2018-2019 Graph Protocol, Inc. and contributors.
 
-type BreachAlert @entity(immutable: true) {
-  id: ID!
-  user: User!
-  severity: BigInt!
-  message: String!
-  timestamp: BigInt!
-  blockNumber: BigInt!
-  transactionHash: Bytes!
-}
+The Graph is dual-licensed under the [MIT license](LICENSE-MIT) and the [Apache License, Version 2.0](LICENSE-APACHE).
 
-type User @entity(immutable: false) {
-  id: ID! # address
-  vaultsCreated: [VaultCreated!]! @derivedFrom(field: "user")
-  devicesRegistered: [DeviceRegistered!]! @derivedFrom(field: "user")
-  breachAlerts: [BreachAlert!]! @derivedFrom(field: "user")
-  totalVaults: BigInt!
-  totalDevices: BigInt!
-  totalBreaches: BigInt!
-  lastActivity: BigInt!
-}
-```
-
-#### Step 5: Implement Event Handlers
-
-Create `src/mapping.ts`:
-
-```typescript
-import { BigInt } from "@graphprotocol/graph-ts"
-import {
-  VaultCreated as VaultCreatedEvent,
-  DeviceRegistered as DeviceRegisteredEvent,
-  BreachAlert as BreachAlertEvent
-} from "../generated/SilentGuardVault/SilentGuardVault"
-import { VaultCreated, DeviceRegistered, BreachAlert, User } from "../generated/schema"
-
-export function handleVaultCreated(event: VaultCreatedEvent): void {
-  // Create or load user
-  let user = User.load(event.params.user.toHexString())
-  if (user == null) {
-    user = new User(event.params.user.toHexString())
-    user.totalVaults = BigInt.fromI32(0)
-    user.totalDevices = BigInt.fromI32(0)
-    user.totalBreaches = BigInt.fromI32(0)
-    user.lastActivity = BigInt.fromI32(0)
-  }
-  user.totalVaults = user.totalVaults.plus(BigInt.fromI32(1))
-  user.lastActivity = event.block.timestamp
-  user.save()
-
-  // Create VaultCreated entity
-  let vaultCreated = new VaultCreated(
-    event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  )
-  vaultCreated.user = user.id
-  vaultCreated.vaultId = event.params.vaultId
-  vaultCreated.timestamp = event.block.timestamp
-  vaultCreated.blockNumber = event.block.number
-  vaultCreated.transactionHash = event.transaction.hash
-
-  vaultCreated.save()
-}
-
-export function handleDeviceRegistered(event: DeviceRegisteredEvent): void {
-  // Create or load user
-  let user = User.load(event.params.user.toHexString())
-  if (user == null) {
-    user = new User(event.params.user.toHexString())
-    user.totalVaults = BigInt.fromI32(0)
-    user.totalDevices = BigInt.fromI32(0)
-    user.totalBreaches = BigInt.fromI32(0)
-    user.lastActivity = BigInt.fromI32(0)
-  }
-  user.totalDevices = user.totalDevices.plus(BigInt.fromI32(1))
-  user.lastActivity = event.block.timestamp
-  user.save()
-
-  // Create DeviceRegistered entity
-  let deviceRegistered = new DeviceRegistered(
-    event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  )
-  deviceRegistered.user = user.id
-  deviceRegistered.deviceId = event.params.deviceId
-  deviceRegistered.deviceName = event.params.deviceName
-  deviceRegistered.timestamp = event.block.timestamp
-  deviceRegistered.blockNumber = event.block.number
-  deviceRegistered.transactionHash = event.transaction.hash
-
-  deviceRegistered.save()
-}
-
-export function handleBreachAlert(event: BreachAlertEvent): void {
-  // Create or load user
-  let user = User.load(event.params.user.toHexString())
-  if (user == null) {
-    user = new User(event.params.user.toHexString())
-    user.totalVaults = BigInt.fromI32(0)
-    user.totalDevices = BigInt.fromI32(0)
-    user.totalBreaches = BigInt.fromI32(0)
-    user.lastActivity = BigInt.fromI32(0)
-  }
-  user.totalBreaches = user.totalBreaches.plus(BigInt.fromI32(1))
-  user.lastActivity = event.block.timestamp
-  user.save()
-
-  // Create BreachAlert entity
-  let breachAlert = new BreachAlert(
-    event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  )
-  breachAlert.user = user.id
-  breachAlert.severity = event.params.severity
-  breachAlert.message = event.params.message
-  breachAlert.timestamp = event.block.timestamp
-  breachAlert.blockNumber = event.block.number
-  breachAlert.transactionHash = event.transaction.hash
-
-  breachAlert.save()
-}
-```
-
-#### Step 6: Add Contract ABI
-
-Create `abis/SilentGuardVault.json` with your contract's ABI including the events:
-
-```json
-[
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
-      {"indexed": false, "internalType": "bytes32", "name": "vaultId", "type": "bytes32"},
-      {"indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256"}
-    ],
-    "name": "VaultCreated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
-      {"indexed": false, "internalType": "bytes32", "name": "deviceId", "type": "bytes32"},
-      {"indexed": false, "internalType": "string", "name": "deviceName", "type": "string"}
-    ],
-    "name": "DeviceRegistered",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "severity", "type": "uint256"},
-      {"indexed": false, "internalType": "string", "name": "message", "type": "string"}
-    ],
-    "name": "BreachAlert",
-    "type": "event"
-  }
-]
-```
-
-#### Step 7: Build and Deploy
-
-```bash
-# Generate TypeScript types
-graph codegen
-
-# Build the subgraph
-graph build
-
-# Create subgraph on local Graph Node
-graph create --node http://localhost:8020 silentguard-vault
-
-# Deploy to local Graph Node
-graph deploy --node http://localhost:8020 --ipfs http://localhost:5001 silentguard-vault
-```
-
-### 🔍 Querying Your Subgraph
-
-#### GraphQL Endpoint
-```
-http://localhost:8000/subgraphs/name/silentguard-vault
-```
-
-#### Example Queries
-
-**Get recent vault creations:**
-```graphql
-{
-  vaultCreateds(first: 10, orderBy: timestamp, orderDirection: desc) {
-    id
-    user { id }
-    vaultId
-    timestamp
-    blockNumber
-  }
-}
-```
-
-**Get users with most activity:**
-```graphql
-{
-  users(first: 5, orderBy: totalVaults, orderDirection: desc) {
-    id
-    totalVaults
-    totalDevices
-    totalBreaches
-    lastActivity
-  }
-}
-```
-
-**Get recent breach alerts:**
-```graphql
-{
-  breachAlerts(first: 10, orderBy: timestamp, orderDirection: desc) {
-    id
-    user { id }
-    severity
-    message
-    timestamp
-  }
-}
-```
-
-**Subscribe to real-time breach alerts:**
-```graphql
-subscription {
-  breachAlerts(first: 1, orderBy: timestamp, orderDirection: desc) {
-    id
-    user { id }
-    severity
-    message
-    timestamp
-  }
-}
-```
-
-### 🔧 Operational Commands
-
-#### Health Checks
-```bash
-# Check Graph Node status
-curl http://localhost:8030/health
-
-# Check subgraph sync status
-curl -X POST http://localhost:8000/subgraphs/name/silentguard-vault \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ _meta { block { number } } }"}'
-
-# Check emulator connectivity
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-```
-
-#### Monitoring & Logs
-```bash
-# View Graph Node logs
-docker-compose logs graph-node
-
-# View emulator logs
-docker-compose logs emulator
-
-# View all service logs
-docker-compose logs
-
-# Monitor PostgreSQL data
-docker-compose exec postgres psql -U graph-node -d graph-node -c "SELECT * FROM subgraphs.subgraph;"
-```
-
-#### Troubleshooting
-
-**Common Issues:**
-
-1. **Subgraph stuck at old block:**
-   - Check RPC emulator logs for rate limiting
-   - Verify upstream Sapphire RPC is responding
-   - Consider adjusting start block to more recent
-
-2. **No events indexed:**
-   - Verify contract address is correct
-   - Check that events are actually being emitted
-   - Ensure ABI matches contract events exactly
-
-3. **Build errors:**
-   - Update Graph CLI to latest version
-   - Check TypeScript types are correctly generated
-   - Verify all imports in mapping.ts
-
-### 📋 Configuration Reference
-
-#### Docker Compose Configuration
-
-**Key emulator configuration in `docker-compose.yml`:**
-```yaml
-emulator:
-  build: ./emulator
-  ports:
-    - '8545:8545'
-  environment:
-    UPSTREAM_RPC: https://oasis-sapphire-testnet.core.chainstack.com/459accf372e882984c0af24ea5c6da20
-
-graph-node:
-  image: graphprotocol/graph-node
-  environment:
-    ethereum: 'oasis:http://emulator:8545'  # This connects Graph Node to our emulator
-    postgres_host: postgres
-    ipfs: 'ipfs:5001'
-```
-
-#### Emulator Features
-
-The custom Sapphire emulator (`docker/emulator/index.js`) provides:
-
-1. **eth_getBlockReceipts emulation** - Aggregates individual transaction receipts
-2. **Transparent proxy** - Forwards all other RPC calls to Sapphire
-3. **Error handling** - Graceful upstream RPC failures
-4. **Request logging** - Debug incoming Graph Node requests
-
-### 🎯 Integration with ROFL
-
-When your ROFL worker mirrors Sui events to Sapphire:
-
-1. **ROFL calls Sapphire contract** method (e.g., `emitSyntheticEvent()`)
-2. **Sapphire contract emits standard EVM events** that match your subgraph schema
-3. **Graph Node picks up events** via the emulator
-4. **Subgraph indexes events** using your mapping handlers
-5. **Frontend queries GraphQL** endpoint for real-time data
-
-This creates a seamless bridge from Sui → Sapphire → Graph Node → Your App.
-
----
-
-## 12 · Timeline
-
-| Phase            | Duration | Status | Milestones                                       |
-|------------------|----------|--------|--------------------------------------------------|
-| **Infrastructure** | **COMPLETE** | ✅ | **Graph Node + Sapphire emulator deployed & tested** |
-| Smart Contracts  | +2 weeks | 🚧     | `Signer.sol` with Graph event logs               |
-| Subgraph Dev     | +1 week  | ✅     | **COMPLETE** - Manifest, schema, mappings working |
-| **ROFL Worker**  | +1 week  | 🚧     | Sui event → Sapphire mirror via ROFL             |
-| Front-end        | +3 weeks | 🚧     | Toasts via GraphQL subscriptions                 |
-| Alpha            | 3 weeks  | 🚧     | 25 testers, uptime ≥ 99 %                        |
-| Beta             | 3 weeks  | 🚧     | Public devnet + docs                             |
-| GA               | —        | 🚧     | Mainnet + open-sourced subgraph                  |
-
-**Total duration: ~15 weeks** _(reduced by 6 weeks due to infrastructure + subgraph completion)_
-
----
-
-## 13 · Risks & Mitigations
-
-| Risk                                  | Likelihood | Impact | Mitigation                                                | Status |
-|---------------------------------------|------------|--------|-----------------------------------------------------------|--------|
-| Subgraph lags behind chain            | Medium     | Medium | Auto re-index, fallback to RPC cache                      | ✅     |
-| **RPC emulator fails or bottlenecks** | Low        | High   | **MITIGATED** - Health checks, monitoring deployed        | ✅     |
-| **ROFL mirror fails or delayed**      | Medium     | High   | Retry queue, telemetry alerts, Sapphire fallback queries  | 🚧     |
-| Query spam / overload                 | Low        | Medium | API keys, Graph CDN caching, rate limits (100 req/s)       | ✅     |
-
----
-
-## 14 · Next Immediate Steps
-
-### 🎯 Ready for Smart Contract Integration
-
-1. **Deploy SilentGuard contracts** to Sapphire testnet with proper event emissions
-2. **Update subgraph** with actual contract addresses and ABIs
-3. **Test event flow** - Deploy contract → Emit events → Query subgraph
-4. **ROFL Integration** - Connect Sui event mirroring to Sapphire
-5. **Frontend Integration** - Build React components that query GraphQL endpoint
-
-### 🔧 Current Working Infrastructure
-
-```bash
-# Start the full stack (everything works)
-cd docker && docker-compose up -d
-
-# Deploy your own subgraph
-cd ../my-silentguard-subgraph
-graph codegen && graph build
-graph create --node http://localhost:8020 silentguard-vault
-graph deploy --node http://localhost:8020 --ipfs http://localhost:5001 silentguard-vault
-
-# Query your subgraph
-curl -X POST http://localhost:8000/subgraphs/name/silentguard-vault \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ _meta { block { number } } }"}'
-```
-
----
-
-## 15 · Future Enhancements
-
-- Prometheus metrics adapter for subgraph uptime  
-- Public Dune dashboard sourced from Graph data  
-- Graph AccountKit integration for wallet-linked identity proofs  
-- Multi-region Graph Node clustering
-- Sapphire mainnet emulator deployment
-- Rate limiting and caching optimizations
-- Automated subgraph deployment CI/CD
-
----
-
-## 16 · Open Questions
-
-1. Should wallet sign events expose caller address or anonymize it?  
-2. Self-hosted Graph cluster vs. Edge & Node proxy hosting?  
-3. Should EIP-4337 Account Abstraction be in scope for v1?  
-4. **Mainnet deployment strategy: dedicated Sapphire RPC or scale emulator?**
-5. **Subgraph versioning strategy for contract upgrades?**
-
----
-
-**End of Document**
-
-_Infrastructure Status: **Graph Node + Sapphire Emulator + Sample Subgraph DEPLOYED** ✅_
-
-_Next: Smart contract deployment with event emissions → Full end-to-end testing_
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied. See the License for the specific language governing permissions and limitations under the License.
