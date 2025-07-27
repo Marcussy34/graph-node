@@ -65,9 +65,67 @@ async function getBlockReceipts(block) {
   }
 }
 
+// Add contract-specific query handler
+async function queryContract(contractAddress, methodData, blockNumber = 'latest') {
+  try {
+    const { data } = await axios.post(NODE_URL, {
+      jsonrpc: '2.0',
+      method: 'eth_call',
+      params: [
+        {
+          to: contractAddress,
+          data: methodData,
+        },
+        blockNumber,
+      ],
+      id: 1,
+    });
+
+    if (data.error) {
+      throw new Error(`RPC Error: ${data.error.message}`);
+    }
+
+    return data.result;
+  } catch (err) {
+    console.error(`Error querying contract ${contractAddress}:`, err.message);
+    throw err;
+  }
+}
+
+// Add contract logs query handler
+async function getContractLogs(contractAddress, topics, fromBlock, toBlock) {
+  try {
+    const { data } = await axios.post(NODE_URL, {
+      jsonrpc: '2.0',
+      method: 'eth_getLogs',
+      params: [
+        {
+          fromBlock: fromBlock || '0x1',
+          toBlock: toBlock || 'latest',
+          address: contractAddress,
+          topics: topics || [],
+        },
+      ],
+      id: 1,
+    });
+
+    if (data.error) {
+      throw new Error(`RPC Error: ${data.error.message}`);
+    }
+
+    return data.result;
+  } catch (err) {
+    console.error(`Error getting logs for contract ${contractAddress}:`, err.message);
+    throw err;
+  }
+}
+
 // JSON-RPC handler
 app.post('/', async (req, res) => {
   const { method, params, id } = req.body;
+
+  // Log incoming requests for debugging
+  console.log(`Received ${method} request with params:`, params);
 
   if (method === 'eth_getBlockReceipts') {
     const [blockHashOrNumber] = params;
@@ -80,6 +138,38 @@ app.post('/', async (req, res) => {
         jsonrpc: '2.0',
         id,
         error: { code: -32000, message: 'Failed to emulate block receipts' },
+      });
+    }
+  }
+
+  // Custom method for contract queries
+  if (method === 'custom_queryContract') {
+    const [contractAddress, methodData, blockNumber] = params;
+    try {
+      const result = await queryContract(contractAddress, methodData, blockNumber);
+      return res.json({ jsonrpc: '2.0', result, id });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32000, message: 'Failed to query contract' },
+      });
+    }
+  }
+
+  // Custom method for contract logs
+  if (method === 'custom_getContractLogs') {
+    const [contractAddress, topics, fromBlock, toBlock] = params;
+    try {
+      const result = await getContractLogs(contractAddress, topics, fromBlock, toBlock);
+      return res.json({ jsonrpc: '2.0', result, id });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32000, message: 'Failed to get contract logs' },
       });
     }
   }

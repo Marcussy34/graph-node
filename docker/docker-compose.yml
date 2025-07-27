@@ -1,13 +1,12 @@
 version: '3'
 services:
   # Emulator for simulating eth_getBlockReceipts method on EVM-compatible chains that do not support it
-  # Uncomment and replace <YOUR_CHAIN_RPC_URL>
-  # emulator:
-  #   build: ./emulator
-  #   ports:
-  #     - '8545:8545'
-  #   environment:
-  #     UPSTREAM_RPC: <YOUR_CHAIN_RPC_URL>
+  emulator:
+    build: ./emulator
+    ports:
+      - '8545:8545'
+    environment:
+      UPSTREAM_RPC: use own RPC
   graph-node:
     image: graphprotocol/graph-node
     ports:
@@ -17,7 +16,7 @@ services:
       - '8030:8030'
       - '8040:8040'
     depends_on:
-      # - emulator # Uncomment if using emulator
+      - emulator # Uncomment if using emulator
       - ipfs
       - postgres
     extra_hosts:
@@ -29,9 +28,9 @@ services:
       postgres_db: graph-node
       ipfs: 'ipfs:5001'
       # Without emulator
-      ethereum: 'mainnet:http://host.docker.internal:8545' # Comment if using emulator
+      # ethereum: 'mainnet:http://host.docker.internal:8545' # Comment if using emulator
       # With emulator
-      # ethereum: 'oasis:http://emulator:8545'
+      ethereum: 'oasis:http://emulator:8545'
       GRAPH_LOG: info
   ipfs:
     image: ipfs/kubo:v0.17.0

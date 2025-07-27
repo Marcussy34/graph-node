@@ -1,0 +1,28 @@
+type Transfer @entity(immutable: true) {
+  id: ID!
+  from: User!
+  to: User!
+  value: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+type Approval @entity(immutable: true) {
+  id: ID!
+  owner: User!
+  spender: User!
+  value: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+type User @entity(immutable: false) {
+  id: ID! # address
+  transfersFrom: [Transfer!]! @derivedFrom(field: "from")
+  transfersTo: [Transfer!]! @derivedFrom(field: "to")
+  totalSent: BigInt!
+  totalReceived: BigInt!
+  transactionCount: BigInt!
+} 

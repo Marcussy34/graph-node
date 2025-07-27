@@ -1,0 +1,16 @@
+{
+  "name": "my-oasis-subgraph",
+  "version": "0.0.1",
+  "repository": "https://github.com/your-username/my-oasis-subgraph",
+  "license": "MIT",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph build",
+    "deploy": "graph deploy --node http://localhost:8020 --ipfs http://localhost:5001 my-oasis-subgraph",
+    "create-local": "graph create --node http://localhost:8020 my-oasis-subgraph"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "0.69.0",
+    "@graphprotocol/graph-ts": "0.31.0"
+  }
+} 

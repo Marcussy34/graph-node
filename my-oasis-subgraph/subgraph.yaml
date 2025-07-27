@@ -1,0 +1,28 @@
+specVersion: 0.0.4
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum/contract
+    name: MyOasisContract
+    network: oasis  # This matches your docker-compose.yml configuration
+    source:
+      address: "0xcFF6932F0fED0f562E96f9d9B125d706e400f087"
+      abi: MyOasisContract
+      startBlock: 12656971  # Recent block on Oasis Sapphire
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      file: ./src/mapping.ts
+      entities:
+        - Transfer
+        - Approval
+        - User
+      abis:
+        - name: MyOasisContract
+          file: ./abis/MyOasisContract.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+        - event: Approval(indexed address,indexed address,uint256)
+          handler: handleApproval 
